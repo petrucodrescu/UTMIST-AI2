@@ -18,10 +18,10 @@ sb3_contrib==2.3.0
 scikit-image==0.25.1
 scikit-learn==1.6.1
 scikit-video==1.1.11
-scipy==1.13.1
+scipy==1.16.2
 stable_baselines3==2.5.0
 sympy==1.5.1
-torch==2.4.1
+torch==2.9.0
 tqdm==4.67.1
 transformers==4.48.2
 supabase

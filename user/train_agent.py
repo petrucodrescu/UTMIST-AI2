@@ -2,7 +2,7 @@
 TRAINING: AGENT
 
 This file contains all the types of Agent classes, the Reward Function API, and the built-in train function from our multi-agent RL API for self-play training.
-- All of these Agent classes are each described below. 
+- All of these Agent classes are each described below.
 
 Running this file will initiate the training function, and will:
 a) Start training from scratch
@@ -13,13 +13,13 @@ b) Continue training from a specific timestep given an input `file_path`
 # ----------------------------- IMPORTS -----------------------------
 # -------------------------------------------------------------------
 
-import torch 
+import torch
 import gymnasium as gym
 from torch.nn import functional as F
 from torch import nn as nn
 import numpy as np
 import pygame
-from stable_baselines3 import A2C, PPO, SAC, DQN, DDPG, TD3, HER 
+from stable_baselines3 import A2C, PPO, SAC, DQN, DDPG, TD3, HER
 from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -184,7 +184,7 @@ class UserInputAgent(Agent):
 
     def predict(self, obs):
         action = self.act_helper.zeros()
-       
+
         keys = pygame.key.get_pressed()
         if keys[pygame.K_w]:
             action = self.act_helper.press_keys(['w'], action)
@@ -254,7 +254,7 @@ class ClockworkAgent(Agent):
         action = self.act_helper.press_keys(self.current_action_data)
         self.steps += 1  # Increment step counter
         return action
-    
+
 class MLPPolicy(nn.Module):
     def __init__(self, obs_dim: int = 64, action_dim: int = 10, hidden_dim: int = 64):
         """
@@ -286,27 +286,27 @@ class MLPExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.Space, features_dim: int = 64, hidden_dim: int = 64):
         super(MLPExtractor, self).__init__(observation_space, features_dim)
         self.model = MLPPolicy(
-            obs_dim=observation_space.shape[0], 
+            obs_dim=observation_space.shape[0],
             action_dim=10,
             hidden_dim=hidden_dim,
         )
-    
+
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         return self.model(obs)
-    
+
     @classmethod
     def get_policy_kwargs(cls, features_dim: int = 64, hidden_dim: int = 64) -> dict:
         return dict(
             features_extractor_class=cls,
             features_extractor_kwargs=dict(features_dim=features_dim, hidden_dim=hidden_dim) #NOTE: features_dim = 10 to match action space output
         )
-    
+
 class CustomAgent(Agent):
     def __init__(self, sb3_class: Optional[Type[BaseAlgorithm]] = PPO, file_path: str = None, extractor: BaseFeaturesExtractor = None):
         self.sb3_class = sb3_class
         self.extractor = extractor
         super().__init__(file_path)
-    
+
     def _initialize(self) -> None:
         if self.file_path is None:
             self.model = self.sb3_class("MlpPolicy", self.env, policy_kwargs=self.extractor.get_policy_kwargs(), verbose=0, n_steps=30*90*3, batch_size=128, ent_coef=0.01)
@@ -517,7 +517,7 @@ def on_knockout_reward(env: WarehouseBrawl, agent: str) -> float:
         return -1.0
     else:
         return 1.0
-    
+
 def on_equip_reward(env: WarehouseBrawl, agent: str) -> float:
     if agent == "player":
         if env.objects["player"].weapon == "Hammer":
@@ -538,26 +538,193 @@ def on_combo_reward(env: WarehouseBrawl, agent: str) -> float:
     else:
         return 1.0
 
+def stock_advantage_reward(
+        env: WarehouseBrawl,
+        success_value: float = 1.0,
+) -> float:
+    """
+    Computes a reward for having a stock advantage, scaled by match progression.
+
+    This reward encourages the agent to secure and maintain a stock lead. The
+    incentive grows stronger as the match nears its end, discouraging risky
+    plays for an early lead while heavily incentivizing protecting that lead
+    when time is running out.
+
+    Args:
+        env (WarehouseBrawl): The game environment.
+        success_value (float): A base multiplier for the reward.
+
+    Returns:
+        float: The computed reward for the current timestep.
+    """
+    # Retrieve the player and opponent objects from the environment state
+    player: Player = env.objects["player"]
+    opponent: Player = env.objects["opponent"]
+
+    # Calculate the stock difference. A positive value means the player is ahead.
+    stock_difference = player.stocks - opponent.stocks
+
+    # If the player does not have a stock advantage, there is no reward.
+    if stock_difference <= 0:
+        return 0.0
+
+    # Get the maximum number of timesteps for the match from the environment
+    total_match_timesteps = env.max_timesteps
+
+    # Avoid division by zero if the match length is not set
+    if total_match_timesteps <= 0:
+        return 0.0
+
+    # Use the environment's internal step counter, assuming it's named 'timestep'.
+    # This attribute would be incremented in the env.step() method.
+    # If your environment uses a different name (e.g., _step, current_step),
+    # replace 'timestep' with the correct attribute name.
+    current_step = getattr(env, 'timestep', 0)
+
+    # Calculate time progress as a fraction from 0.0 to 1.0.
+    time_progress = min(current_step / total_match_timesteps, 1.0)
+
+    # The reward is the product of the base value, the size of the stock lead,
+    # and the time progression scaler.
+    reward = success_value * stock_difference * time_progress
+
+    # Scale the reward by the timestep duration (dt) to make it independent of the FPS.
+    return reward * env.dt
+
+def edge_guard_reward(
+        env: WarehouseBrawl,
+        success_value: float = 5.0,
+        fail_value: float = -5.0,
+        opportunity_value: float = 0.5,
+) -> float:
+    """
+    Computes a reward for successfully edge-guarding the opponent.
+
+    An "edge-guard situation" is defined by four conditions based on the game's state machine:
+    1.  The opponent is horizontally off the main stage.
+    2.  The opponent is in an aerial state (`InAirState`), below the main stage, and attempting to recover.
+    3.  The player is in a grounded state (`GroundState`) on the main stage, near the same edge as the opponent.
+    4.  The player is facing the opponent and is in a state where they can act.
+
+    Args:
+        env (WarehouseBrawl): The game environment.
+        success_value (float): Large reward for hitting the opponent during this situation.
+        fail_value (float): Large penalty for being hit by the opponent during this situation.
+        opportunity_value (float): Small, continuous reward for maintaining the correct position to edge-guard.
+
+    Returns:
+        float: The computed reward for the current timestep.
+    """
+    # Retrieve player and opponent objects from the environment
+    player: Player = env.objects["player"]
+    opponent: Player = env.objects["opponent"]
+
+    # --- 1. Define Stage Geometry and Character States ---
+
+    # Define the horizontal edge of the stage. Assumes stage is centered at x=0.
+    stage_edge_x = env.stage_width_tiles / 2.0
+
+    # Define the main stage's vertical position (y-coordinate). This is an assumption;
+    # it might need to be adjusted or read from the environment if available.
+    main_stage_floor_y = 2.5
+
+    # Define a "guard zone" width from the edge where the player should be.
+    guard_zone_width = 5.0
+
+    # --- 2. Evaluate the Four Edge-Guarding Conditions ---
+
+    # Condition 1: Is the opponent horizontally off the main stage?
+    is_opponent_off_stage = abs(opponent.body.position.x) > stage_edge_x
+
+    # Condition 2: Is the opponent trying to recover?
+    # This means they are airborne, below the stage, and not in an invulnerable state (like DodgeState).
+    is_opponent_airborne = isinstance(opponent.state, InAirState)
+    is_opponent_below_stage = opponent.body.position.y > main_stage_floor_y # Assumes positive y is down
+    is_opponent_vulnerable = opponent.state.vulnerable()
+    is_opponent_recovering = is_opponent_airborne and is_opponent_below_stage and is_opponent_vulnerable
+
+    # Condition 3: Is the player positioned on the stage near the correct edge?
+    is_player_grounded = isinstance(player.state, GroundState)
+    is_player_on_correct_side = (player.body.position.x * opponent.body.position.x) > 0
+    is_player_in_zone = (stage_edge_x - abs(player.body.position.x)) < guard_zone_width
+    is_player_positioned = is_player_grounded and is_player_on_correct_side and is_player_in_zone
+
+    # Condition 4: Is the player facing the opponent and able to act?
+    # player.facing is likely an Enum or int (-1 for left, 1 for right)
+    player_facing_int = int(player.facing)
+    opponent_is_right = opponent.body.position.x > player.body.position.x
+    is_player_facing_opponent = (player_facing_int == 1 and opponent_is_right) or \
+                                (player_facing_int == -1 and not opponent_is_right)
+    can_player_act = player.state.can_control()
+
+    # --- 3. Calculate Reward Based on Conditions ---
+
+    reward = 0.0
+
+    # Check if all conditions for an "edge-guard situation" are met
+    if is_opponent_off_stage and is_opponent_recovering and is_player_positioned and is_player_facing_opponent and can_player_act:
+
+        # Success: Player dealt damage to the opponent
+        if opponent.damage_taken_this_frame > 0:
+            reward = success_value
+
+        # Failure: Player took damage from the opponent
+        elif player.damage_taken_this_frame > 0:
+            reward = fail_value
+
+        # Opportunity: Player is in position, but no damage was exchanged this frame
+        else:
+            reward = opportunity_value
+
+    # Scale the final reward by the timestep to make it framerate-independent
+    return reward * env.dt
+
+def first_hit(
+        env: WarehouseBrawl,
+        agent: str = "player",
+        success_value: float = 20.0,
+        fail_value: float = 10.0,
+) -> float:
+
+    """
+    Computes the reward based on who lands the first hit
+
+    Args:
+        env (WarehouseBrawl): The game environment
+        agent (str): The agent that hit first ("player" or "opponent")
+        success_value (float): Reward value for the player hitting first
+        fail_value (float): Penalty for the opponent hitting first
+
+    Returns:
+        float: The computed reward.
+    """
+
+    reward = success_value if agent == "player" else -fail_value
+    return reward
+
 '''
 Add your dictionary of RewardFunctions here using RewTerms
 '''
 def gen_reward_manager():
     reward_functions = {
-        #'target_height_reward': RewTerm(func=base_height_l2, weight=0.0, params={'target_height': -4, 'obj_name': 'player'}),
+        'target_height_reward': RewTerm(func=base_height_l2, weight=0.0, params={'target_height': -4, 'obj_name': 'player'}),
         'danger_zone_reward': RewTerm(func=danger_zone_reward, weight=0.5),
         'damage_interaction_reward': RewTerm(func=damage_interaction_reward, weight=1.0),
-        #'head_to_middle_reward': RewTerm(func=head_to_middle_reward, weight=0.01),
-        #'head_to_opponent': RewTerm(func=head_to_opponent, weight=0.05),
+        'head_to_middle_reward': RewTerm(func=head_to_middle_reward, weight=0.01),
+        'head_to_opponent': RewTerm(func=head_to_opponent, weight=0.05),
         'penalize_attack_reward': RewTerm(func=in_state_reward, weight=-0.04, params={'desired_state': AttackState}),
         'holding_more_than_3_keys': RewTerm(func=holding_more_than_3_keys, weight=-0.01),
-        #'taunt_reward': RewTerm(func=in_state_reward, weight=0.2, params={'desired_state': TauntState}),
+        'taunt_reward': RewTerm(func=in_state_reward, weight=0.2, params={'desired_state': TauntState}),
+        'stock_advantage_reward': RewTerm(func=stock_advantage_reward, weight=1.0),
+        'edge_guard_reward': RewTerm(func=edge_guard_reward, weight=0.5),
     }
     signal_subscriptions = {
         'on_win_reward': ('win_signal', RewTerm(func=on_win_reward, weight=50)),
         'on_knockout_reward': ('knockout_signal', RewTerm(func=on_knockout_reward, weight=8)),
         'on_combo_reward': ('hit_during_stun', RewTerm(func=on_combo_reward, weight=5)),
         'on_equip_reward': ('weapon_equip_signal', RewTerm(func=on_equip_reward, weight=10)),
-        'on_drop_reward': ('weapon_drop_signal', RewTerm(func=on_drop_reward, weight=15))
+        'on_drop_reward': ('weapon_drop_signal', RewTerm(func=on_drop_reward, weight=15)),
+        'first_hit_reward': ('first_hit_signal', RewTerm(func=first_hit, weight=10, params={'agent': 'player'})),
     }
     return RewardManager(reward_functions, signal_subscriptions)
 
@@ -591,7 +758,7 @@ if __name__ == '__main__':
         save_freq=100_000, # Save frequency
         max_saved=40, # Maximum number of saved models
         save_path='checkpoints', # Save path
-        run_name='experiment_9',
+        run_name='experiment_1_DG',
         mode=SaveHandlerMode.FORCE # Save mode, FORCE or RESUME
     )
 

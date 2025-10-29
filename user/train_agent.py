@@ -367,9 +367,22 @@ class RewardMode(Enum):
     SYMMETRIC = 1
     ASYMMETRIC_DEFENSIVE = 2
 
+def fight_mode_setter(env: WarehouseBrawl) -> RewardMode:
+    """
+    Set FIGHT_MODE to different fighting styles depending on enemy damage.
+    """
+    opponent: Player = env.objects["opponent"]
+    player: Player = env.objects["player"]
+
+    if 20 <= (player.damage - opponent.damage):
+        return RewardMode.ASYMMETRIC_OFFENSIVE
+    elif 0 <= (player.damage - opponent.damage) < 20:
+        return RewardMode.SYMMETRIC
+    else:
+        return RewardMode.ASYMMETRIC_DEFENSIVE
+
 def damage_interaction_reward(
     env: WarehouseBrawl,
-    mode: RewardMode = RewardMode.SYMMETRIC,
 ) -> float:
     """
     Computes the reward based on damage interactions between players.
@@ -390,6 +403,7 @@ def damage_interaction_reward(
     player: Player = env.objects["player"]
     opponent: Player = env.objects["opponent"]
 
+    mode = fight_mode_setter(env)
     # Reward dependent on the mode
     damage_taken = player.damage_taken_this_frame
     damage_dealt = opponent.damage_taken_this_frame
@@ -428,8 +442,15 @@ def danger_zone_reward(
     # Get player object from the environment
     player: Player = env.objects["player"]
 
+    # Determine the current fight mode to apply a conditional penalty
+    mode = fight_mode_setter(env)
+    current_penalty = zone_penalty
+    # If the agent has a lead, penalize risky plays more heavily
+    if mode == RewardMode.ASYMMETRIC_OFFENSIVE:
+        current_penalty *= 2
+
     # Apply penalty if the player is in the danger zone
-    reward = -zone_penalty if player.body.position.y >= zone_height else 0.0
+    reward = -current_penalty if player.body.position.y >= zone_height else 0.0
 
     return reward * env.dt
 
@@ -451,8 +472,12 @@ def in_state_reward(
     # Get player object from the environment
     player: Player = env.objects["player"]
 
-    # Apply penalty if the player is in the danger zone
-    reward = 1 if isinstance(player.state, desired_state) else 0.0
+    mode = fight_mode_setter(env)
+    if mode == RewardMode.ASYMMETRIC_DEFENSIVE:
+        reward = 2 if isinstance(player.state, desired_state) else 0.0
+    else:
+        # Apply penalty if the player is in the danger zone
+        reward = 1 if isinstance(player.state, desired_state) else 0.0
 
     return reward * env.dt
 
@@ -473,25 +498,39 @@ def head_to_middle_reward(
     # Get player object from the environment
     player: Player = env.objects["player"]
 
-    # Apply penalty if the player is in the danger zone
-    multiplier = -1 if player.body.position.x > 0 else 1
-    reward = multiplier * (player.body.position.x - player.prev_x)
+    mode = fight_mode_setter(env)
+    if mode == RewardMode.ASYMMETRIC_OFFENSIVE:
+        multiplier = -0.5 if player.body.position.x > 0 else 0.5
+        reward = multiplier * (player.body.position.x - player.prev_x)
+    else:
+        # Apply penalty if the player is in the danger zone
+        multiplier = -1 if player.body.position.x > 0 else 1
+        reward = multiplier * (player.body.position.x - player.prev_x)
 
     return reward
 
 def head_to_opponent(
     env: WarehouseBrawl,
-) -> float:
+) -> float | None:
 
     # Get player object from the environment
     player: Player = env.objects["player"]
     opponent: Player = env.objects["opponent"]
 
+    mode = fight_mode_setter(env)
     # Apply penalty if the player is in the danger zone
-    multiplier = -1 if player.body.position.x > opponent.body.position.x else 1
-    reward = multiplier * (player.body.position.x - player.prev_x)
-
-    return reward
+    if mode == RewardMode.SYMMETRIC:
+        multiplier = -1 if player.body.position.x > opponent.body.position.x else 1
+        reward = multiplier * (player.body.position.x - player.prev_x)
+        return float(reward)
+    elif mode == RewardMode.ASYMMETRIC_OFFENSIVE:
+        multiplier = -1 if player.body.position.x > opponent.body.position.x else 1
+        reward = multiplier * (player.body.position.x - player.prev_x)
+        return float(reward * 2)
+    elif mode == RewardMode.ASYMMETRIC_DEFENSIVE:
+        multiplier = -1 if player.body.position.x > opponent.body.position.x else 1
+        reward = multiplier * (player.body.position.x - player.prev_x)
+        return float(reward * 0.5)
 
 def holding_more_than_3_keys(
     env: WarehouseBrawl,
@@ -707,7 +746,7 @@ Add your dictionary of RewardFunctions here using RewTerms
 '''
 def gen_reward_manager():
     reward_functions = {
-        'target_height_reward': RewTerm(func=base_height_l2, weight=0.0, params={'target_height': -4, 'obj_name': 'player'}),
+        'target_height_reward': RewTerm(func=base_height_l2, weight=0.05, params={'target_height': -4, 'obj_name': 'player'}),
         'danger_zone_reward': RewTerm(func=danger_zone_reward, weight=0.5),
         'damage_interaction_reward': RewTerm(func=damage_interaction_reward, weight=1.0),
         'head_to_middle_reward': RewTerm(func=head_to_middle_reward, weight=0.01),

@@ -558,24 +558,53 @@ def on_knockout_reward(env: WarehouseBrawl, agent: str) -> float:
         return 1.0
 
 def on_equip_reward(env: WarehouseBrawl, agent: str) -> float:
-    if agent == "player":
-        if env.objects["player"].weapon == "Hammer":
-            return 2.0
-        elif env.objects["player"].weapon == "Spear":
-            return 1.0
-    return 0.0
+
+    mode = fight_mode_setter(env)
+
+    if mode == RewardMode.ASYMMETRIC_OFFENSIVE:
+        if agent == "player":
+            if env.objects["player"].weapon == "Hammer":
+                return 2.0
+            elif env.objects["player"].weapon == "Spear":
+                return 1.0
+        return 0.0
+    else:
+        if agent == "player":
+            if env.objects["player"].weapon == "Hammer":
+                return 2.0
+            elif env.objects["player"].weapon == "Spear":
+                return 1.0
+        return 0.0
 
 def on_drop_reward(env: WarehouseBrawl, agent: str) -> float:
-    if agent == "player":
-        if env.objects["player"].weapon == "Punch":
-            return -1.0
-    return 0.0
+
+    mode = fight_mode_setter(env)
+
+    if mode == RewardMode.ASYMMETRIC_OFFENSIVE:
+        if agent == "player":
+            if env.objects["player"].weapon == "Punch":
+                return -2.0
+        return 0.0
+    else:
+        if agent == "player":
+            if env.objects["player"].weapon == "Punch":
+                return -1.0
+        return 0.0
 
 def on_combo_reward(env: WarehouseBrawl, agent: str) -> float:
-    if agent == 'player':
-        return -1.0
+
+    mode = fight_mode_setter(env)
+
+    if mode == RewardMode.ASYMMETRIC_OFFENSIVE:
+        if agent == 'player':
+            return 2.0
+        else:
+            return -2.0
     else:
-        return 1.0
+        if agent == 'player':
+            return 1.0
+        else:
+            return -1.0
 
 def stock_advantage_reward(
         env: WarehouseBrawl,
@@ -635,87 +664,95 @@ def edge_guard_reward(
         success_value: float = 5.0,
         fail_value: float = -5.0,
         opportunity_value: float = 0.5,
+        offensive_multiplier: float = 2.0,
+        defensive_multiplier: float = 0.5
 ) -> float:
     """
-    Computes a reward for successfully edge-guarding the opponent.
+    Computes a reward for edge-guarding, adapted to the current fight mode.
 
-    An "edge-guard situation" is defined by four conditions based on the game's state machine:
-    1.  The opponent is horizontally off the main stage.
-    2.  The opponent is in an aerial state (`InAirState`), below the main stage, and attempting to recover.
-    3.  The player is in a grounded state (`GroundState`) on the main stage, near the same edge as the opponent.
-    4.  The player is facing the opponent and is in a state where they can act.
+    An "edge-guard situation" is defined by four conditions:
+    1. The opponent is horizontally off the main stage.
+    2. The opponent is in an aerial state, below the stage, and recovering.
+    3. The player is grounded on the stage near the correct edge.
+    4. The player is facing the opponent and able to act.
+
+    The rewards are scaled based on the fight mode:
+    - OFFENSIVE: Increased rewards to encourage finishing the opponent.
+    - DEFENSIVE: Decreased rewards to promote safer, less committal play.
+    - SYMMETRIC: Uses the base reward values.
 
     Args:
         env (WarehouseBrawl): The game environment.
-        success_value (float): Large reward for hitting the opponent during this situation.
-        fail_value (float): Large penalty for being hit by the opponent during this situation.
-        opportunity_value (float): Small, continuous reward for maintaining the correct position to edge-guard.
+        success_value (float): Base reward for hitting the opponent.
+        fail_value (float): Base penalty for being hit by the opponent.
+        opportunity_value (float): Base reward for maintaining position.
+        offensive_multiplier (float): Multiplier for rewards in OFFENSIVE mode.
+        defensive_multiplier (float): Multiplier for rewards in DEFENSIVE mode.
 
     Returns:
-        float: The computed reward for the current timestep.
+        float: The computed, mode-adjusted reward for the current timestep.
     """
-    # Retrieve player and opponent objects from the environment
+    # Get player and opponent objects
     player: Player = env.objects["player"]
     opponent: Player = env.objects["opponent"]
 
     # --- 1. Define Stage Geometry and Character States ---
-
-    # Define the horizontal edge of the stage. Assumes stage is centered at x=0.
     stage_edge_x = env.stage_width_tiles / 2.0
-
-    # Define the main stage's vertical position (y-coordinate). This is an assumption;
-    # it might need to be adjusted or read from the environment if available.
     main_stage_floor_y = 2.5
-
-    # Define a "guard zone" width from the edge where the player should be.
     guard_zone_width = 5.0
 
-    # --- 2. Evaluate the Four Edge-Guarding Conditions ---
-
-    # Condition 1: Is the opponent horizontally off the main stage?
+    # --- 2. Evaluate Edge-Guarding Conditions ---
     is_opponent_off_stage = abs(opponent.body.position.x) > stage_edge_x
-
-    # Condition 2: Is the opponent trying to recover?
-    # This means they are airborne, below the stage, and not in an invulnerable state (like DodgeState).
-    is_opponent_airborne = isinstance(opponent.state, InAirState)
-    is_opponent_below_stage = opponent.body.position.y > main_stage_floor_y # Assumes positive y is down
-    is_opponent_vulnerable = opponent.state.vulnerable()
-    is_opponent_recovering = is_opponent_airborne and is_opponent_below_stage and is_opponent_vulnerable
-
-    # Condition 3: Is the player positioned on the stage near the correct edge?
-    is_player_grounded = isinstance(player.state, GroundState)
-    is_player_on_correct_side = (player.body.position.x * opponent.body.position.x) > 0
-    is_player_in_zone = (stage_edge_x - abs(player.body.position.x)) < guard_zone_width
-    is_player_positioned = is_player_grounded and is_player_on_correct_side and is_player_in_zone
-
-    # Condition 4: Is the player facing the opponent and able to act?
-    # player.facing is likely an Enum or int (-1 for left, 1 for right)
+    is_opponent_recovering = (
+            isinstance(opponent.state, InAirState) and
+            opponent.body.position.y > main_stage_floor_y and
+            opponent.state.vulnerable()
+    )
+    is_player_positioned = (
+            isinstance(player.state, GroundState) and
+            (player.body.position.x * opponent.body.position.x) > 0 and
+            (stage_edge_x - abs(player.body.position.x)) < guard_zone_width
+    )
     player_facing_int = int(player.facing)
     opponent_is_right = opponent.body.position.x > player.body.position.x
     is_player_facing_opponent = (player_facing_int == 1 and opponent_is_right) or \
                                 (player_facing_int == -1 and not opponent_is_right)
     can_player_act = player.state.can_control()
 
-    # --- 3. Calculate Reward Based on Conditions ---
-
+    # --- 3. Calculate Reward Based on Conditions and Mode ---
     reward = 0.0
 
     # Check if all conditions for an "edge-guard situation" are met
     if is_opponent_off_stage and is_opponent_recovering and is_player_positioned and is_player_facing_opponent and can_player_act:
 
-        # Success: Player dealt damage to the opponent
+        # Determine current fight mode
+        mode = fight_mode_setter(env)
+
+        # Adjust reward values based on the mode
+        current_success = success_value
+        current_fail = fail_value
+        current_opportunity = opportunity_value
+
+        if mode == RewardMode.ASYMMETRIC_OFFENSIVE:
+            current_success *= offensive_multiplier
+            current_fail *= offensive_multiplier
+            current_opportunity *= offensive_multiplier
+        elif mode == RewardMode.ASYMMETRIC_DEFENSIVE:
+            current_success *= defensive_multiplier
+            current_fail *= defensive_multiplier
+            current_opportunity *= defensive_multiplier
+
+        # Success: Player dealt damage
         if opponent.damage_taken_this_frame > 0:
-            reward = success_value
-
-        # Failure: Player took damage from the opponent
+            reward = current_success
+        # Failure: Player took damage
         elif player.damage_taken_this_frame > 0:
-            reward = fail_value
-
-        # Opportunity: Player is in position, but no damage was exchanged this frame
+            reward = current_fail
+        # Opportunity: Player is in position
         else:
-            reward = opportunity_value
+            reward = current_opportunity
 
-    # Scale the final reward by the timestep to make it framerate-independent
+    # Scale the final reward by the timestep
     return reward * env.dt
 
 def first_hit(

@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="3aa24987-2ad7-446a-9819-a3a3e8ca488e" name="Changes" comment="Added fight_mode implementation to in_state_reward, danger_zone_reward, damage_interaction, head_to_middle and head_to_opponent.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/user/train_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/user/train_agent.py" afterDir="false" />
+    <list default="true" id="3aa24987-2ad7-446a-9819-a3a3e8ca488e" name="Changes" comment="Added fight mode interaction to combo, equip, drop and edge guard reward functions.">
+      <change beforePath="$PROJECT_DIR$/environment/environment.py" beforeDir="false" afterPath="$PROJECT_DIR$/environment/environment.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -85,7 +84,15 @@
       <option name="project" value="LOCAL" />
       <updated>1761777573598</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="Added fight mode interaction to combo, equip, drop and edge guard reward functions.">
+      <option name="closed" value="true" />
+      <created>1761858456855</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1761858456855</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -106,7 +113,8 @@
     <MESSAGE value="Merge branch 'UTMIST:main' into main" />
     <MESSAGE value="Fixed errors with local running of the repository. Added extra reward functions and first-hit signal implementation." />
     <MESSAGE value="Added fight_mode implementation to in_state_reward, danger_zone_reward, damage_interaction, head_to_middle and head_to_opponent." />
-    <option name="LAST_COMMIT_MESSAGE" value="Added fight_mode implementation to in_state_reward, danger_zone_reward, damage_interaction, head_to_middle and head_to_opponent." />
+    <MESSAGE value="Added fight mode interaction to combo, equip, drop and edge guard reward functions." />
+    <option name="LAST_COMMIT_MESSAGE" value="Added fight mode interaction to combo, equip, drop and edge guard reward functions." />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/UTMIST_AI2$train_agent.coverage" NAME="train_agent Coverage Results" MODIFIED="1761686416596" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/user" />

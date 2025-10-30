@@ -535,7 +535,7 @@ class Camera():
     pos: list[int] = [0,0]
     zoom: float = 2.0
 
-    def scale_background(self, env, bg_image: pygame.image = pygame.image.load('/Users/andre/PycharmProjects/UTMIST-AI2/environment/assets/map/background.png')) -> None:
+    def scale_background(self, env, bg_image: pygame.image = pygame.image.load('environment/assets/map/background.png')) -> None:
 
         resolution: Tuple[int] = env.resolution
         window_height, window_width = self.resolutions[resolution]
@@ -1029,7 +1029,7 @@ class WarehouseBrawl(MalachiteEnv[np.ndarray, np.ndarray, int]):
             'Groundpound': MoveType.GROUNDPOUND,
         }
 
-        for file in sorted(os.listdir('/Users/andre/PycharmProjects/UTMIST-AI2/environment/unarmed_attacks')):
+        for file in sorted(os.listdir('environment/unarmed_attacks')):
             name = file.split('.')[0]
 
             name = name.split(" ")[1]
@@ -1037,30 +1037,30 @@ class WarehouseBrawl(MalachiteEnv[np.ndarray, np.ndarray, int]):
             if name not in self.keys.keys(): continue
             move_data = None
             try:
-                with open(os.path.join('/Users/andre/PycharmProjects/UTMIST-AI2/environment/unarmed_attacks', file)) as f:
+                with open(os.path.join('environment/unarmed_attacks', file)) as f:
                     move_data = json.load(f)
             except Exception as e:
                 print(f"Error loading {file}: {e}")
             self.attacks[self.keys[name]] = move_data
 
-        for file in sorted(os.listdir('/Users/andre/PycharmProjects/UTMIST-AI2/environment/spear_attacks')):
+        for file in sorted(os.listdir('environment/spear_attacks')):
             name = file.split('.')[0].split(" ")[1]
             if name not in self.keys.keys(): continue
             move_data = None
             try:
-                with open(os.path.join('/Users/andre/PycharmProjects/UTMIST-AI2/environment/spear_attacks', file)) as f:
+                with open(os.path.join('environment/spear_attacks', file)) as f:
                     move_data = json.load(f)
             except Exception as e:
                 print(f"Error loading {file}: {e}")
 
             self.spear_attacks[self.keys[name]] = move_data
 
-        for file in sorted(os.listdir('/Users/andre/PycharmProjects/UTMIST-AI2/environment/hammer_attacks')):
+        for file in sorted(os.listdir('environment/hammer_attacks')):
             name = file.split('.')[0].split(" ")[1]
             if name not in self.keys.keys(): continue
             move_data = None
             try:
-                with open(os.path.join('/Users/andre/PycharmProjects/UTMIST-AI2/environment/hammer_attacks', file)) as f:
+                with open(os.path.join('environment/hammer_attacks', file)) as f:
                     move_data = json.load(f)
             except Exception as e:
                 print(f"Error loading {file}: {e}")

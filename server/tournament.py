@@ -32,6 +32,7 @@ Example:
 Author: Ambrose Ling
 Date: 2025-05-25
 """
+
 import math as math
 import itertools as itertools
 
@@ -39,7 +40,7 @@ class Participant:
 
     def __init__(self, competitor=None):
         self.competitor = competitor
-        
+
 
     def __repr__(self) -> str:
         return f'<Participant {self.competitor}>'

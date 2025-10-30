@@ -32,7 +32,8 @@ Example:
 Author: Ambrose Ling
 Date: 2025-05-25
 """
-
+import math as math
+import itertools as itertools
 
 class Participant:
 
@@ -57,7 +58,7 @@ class Participant:
         """
         self.competitor = competitor
 
-  class Match:
+class Match:
     """
     A match represents a single match in a tournament, between 2 participants.
     It adds empty participants as placeholders for the winner and loser,
@@ -209,11 +210,11 @@ class Tournament:
                         incoming_participants.append(match.get_winner_participant())
                         self.__matches.append(match)
                 if len(incoming_participants) > 0:
-                    if len(losers_by_round) <= index + 1:       
+                    if len(losers_by_round) <= index + 1:
                         losers_by_round.append(incoming_participants)
                     else:
                         losers_by_round[index + 1].extend(incoming_participants)
-            
+
             elif len(losers_by_round) > index + 1:
                 losers_by_round[index + 1].extend(incoming_participants)
 
@@ -225,7 +226,7 @@ class Tournament:
         finals_match = Match(last_winner, last_loser)
         self.__matches.append(finals_match)
         self.__finals_match = finals_match
-        
+
         if bracket_reset_finals:
             bracket_reset_finals_match = Match(finals_match.get_winner_participant(), finals_match.get_loser_participant())
             self.__matches.append(bracket_reset_finals_match)

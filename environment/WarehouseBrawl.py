@@ -1,6 +1,5 @@
 from user.environment import *
 
-
 class WarehouseBrawl(MalachiteEnv[np.ndarray, np.ndarray, int]):
 
     BRAWL_TO_UNITS = 1.024 / 320  # Conversion factor

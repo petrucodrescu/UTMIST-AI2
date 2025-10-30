@@ -867,6 +867,8 @@ class WarehouseBrawl(MalachiteEnv[np.ndarray, np.ndarray, int]):
         self.knockout_signal = Signal(self)
         self.win_signal = Signal(self)
         self.hit_during_stun = Signal(self)
+        self.first_hit_signal = Signal(self)
+        self.first_hit_landed = False  # Flag to ensure the signal only emits once
         
         #kaden
         self.weapon_drop_signal = Signal(self)
@@ -1110,6 +1112,20 @@ class WarehouseBrawl(MalachiteEnv[np.ndarray, np.ndarray, int]):
         if hasattr(self, "weapon_controller"):
             self.weapon_controller.try_pick_up_all(self.players, self.steps)
             self.weapon_controller.update(self.steps)
+
+        if not self.first_hit_landed:
+            player = self.players[0]   # Agent 0
+            opponent = self.players[1] # Agent 1
+
+            # Check if the opponent landed the first hit on the player
+            if player.damage_taken_this_frame > 0:
+                self.first_hit_signal.emit(agent="opponent")
+                self.first_hit_landed = True # Set flag to prevent this from running again
+
+            # Check if the player landed the first hit on the opponent
+            elif opponent.damage_taken_this_frame > 0:
+                self.first_hit_signal.emit(agent="player")
+                self.first_hit_landed = True # Set flag
             
            
 
@@ -1135,6 +1151,7 @@ class WarehouseBrawl(MalachiteEnv[np.ndarray, np.ndarray, int]):
         self.space.gravity = 0, 17.808
 
         self.steps = 0
+        self.first_hit_landed = False
 
         # Other params
         self.rewards = {agent: 0 for agent in self.agents}

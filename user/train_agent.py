@@ -336,6 +336,57 @@ class CustomAgent(Agent):
             log_interval=log_interval,
         )
 
+class Skynet_Final(Agent):
+    '''
+    RecurrentPPOAgent:
+        - Defines an RL Agent that uses the Recurrent PPO (LSTM+PPO) algorithm
+    '''
+    def __init__(
+            self,
+            file_path: Optional[str] = None
+    ):
+        super().__init__(file_path)
+        self.lstm_states = None
+        self.episode_starts = np.ones((1,), dtype=bool)
+
+    def _initialize(self) -> None:
+        if self.file_path is None:
+            policy_kwargs = {
+                'activation_fn': nn.GELU,
+                'lstm_hidden_size': 256, #512
+                'net_arch': [dict(pi=[128, 64, 128], vf=[128, 64, 128])],
+                'shared_lstm': True,
+                'enable_critic_lstm': False,
+                'share_features_extractor': True,
+
+            }
+            self.model = RecurrentPPO("MlpLstmPolicy",
+                                      self.env,
+                                      verbose=0,
+                                      n_steps=30*90*20,
+                                      batch_size=16,
+                                      ent_coef=0.05,
+                                      policy_kwargs=policy_kwargs)
+            del self.env
+        else:
+            self.model = RecurrentPPO.load(self.file_path)
+
+    def reset(self) -> None:
+        self.episode_starts = True
+
+    def predict(self, obs):
+        action, self.lstm_states = self.model.predict(obs, state=self.lstm_states, episode_start=self.episode_starts, deterministic=True)
+        if self.episode_starts: self.episode_starts = False
+        return action
+
+    def save(self, file_path: str) -> None:
+        self.model.save(file_path)
+
+    def learn(self, env, total_timesteps, log_interval: int = 2, verbose=0):
+        self.model.set_env(env)
+        self.model.verbose = verbose
+        self.model.learn(total_timesteps=total_timesteps, log_interval=log_interval)
+
 # --------------------------------------------------------------------------------
 # ----------------------------- REWARD FUNCTIONS API -----------------------------
 # --------------------------------------------------------------------------------

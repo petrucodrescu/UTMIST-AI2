@@ -11,7 +11,7 @@ experiment_dir_1 = "experiment_6/" #input('Model experiment directory name (e.g.
 model_name_1 = "rl_model00_steps" #input('Name of first model (e.g. rl_model_100_steps): ')
 
 my_agent = UserInputAgent()
-opponent = SubmittedAgent('checkpoints/experiment_1_DG/rl_model_3900039_steps.zip')
+opponent = SubmittedAgent('checkpoints/experiment_7_SkyNet_Final/rl_model_1364707_steps.zip')
 #opponent = ConstantAgent()
 # my_agent = UserInputAgent()
 # opponent = ConstantAgent()

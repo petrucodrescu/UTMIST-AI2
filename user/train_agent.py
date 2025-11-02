@@ -353,8 +353,8 @@ class Skynet_Final(Agent):
         if self.file_path is None:
             policy_kwargs = {
                 'activation_fn': nn.GELU,
-                'lstm_hidden_size': 256, #512
-                'net_arch': [dict(pi=[128, 64, 128], vf=[128, 64, 128])],
+                'lstm_hidden_size': 128, #512
+                'net_arch': [dict(pi=[32, 32, 32], vf=[32, 32, 32])],
                 'shared_lstm': True,
                 'enable_critic_lstm': False,
                 'share_features_extractor': True,
@@ -362,10 +362,12 @@ class Skynet_Final(Agent):
             }
             self.model = RecurrentPPO("MlpLstmPolicy",
                                       self.env,
-                                      verbose=0,
-                                      n_steps=30*90*20,
-                                      batch_size=16,
+                                      verbose=1,
+                                      n_steps=4096,
+                                      batch_size=64,
                                       ent_coef=0.05,
+                                      clip_range=0.2,
+                                      gamma=0.99,
                                       policy_kwargs=policy_kwargs)
             del self.env
         else:
@@ -532,33 +534,69 @@ def in_state_reward(
 
     return reward * env.dt
 
+# def head_to_middle_reward(
+#     env: WarehouseBrawl,
+# ) -> float:
+#     """
+#     Applies a penalty for every time frame player surpases a certain height threshold in the environment.
+#
+#     Args:
+#         env (WarehouseBrawl): The game environment.
+#         zone_penalty (int): The penalty applied when the player is in the danger zone.
+#         zone_height (float): The height threshold defining the danger zone.
+#
+#     Returns:
+#         float: The computed penalty as a tensor.
+#     """
+#     # Get player object from the environment
+#     player: Player = env.objects["player"]
+#
+#     mode = fight_mode_setter(env)
+#     if mode == RewardMode.ASYMMETRIC_OFFENSIVE:
+#         multiplier = -0.5 if player.body.position.x > 0 else 0.5
+#         reward = multiplier * (player.body.position.x - player.prev_x)
+#     else:
+#         # Apply penalty if the player is in the danger zone
+#         multiplier = -1 if player.body.position.x > 0 else 1
+#         reward = multiplier * (player.body.position.x - player.prev_x)
+#
+#     return reward
+
 def head_to_middle_reward(
-    env: WarehouseBrawl,
+        env: WarehouseBrawl,
+        offensive_multiplier: float = 2.0
 ) -> float:
     """
-    Applies a penalty for every time frame player surpases a certain height threshold in the environment.
+    Rewards the agent for moving horizontally towards the center of the stage.
+    The reward is increased when in the ASYMMETRIC_OFFENSIVE mode.
 
     Args:
         env (WarehouseBrawl): The game environment.
-        zone_penalty (int): The penalty applied when the player is in the danger zone.
-        zone_height (float): The height threshold defining the danger zone.
+        offensive_multiplier (float): The multiplier applied to the reward when
+                                      in ASYMMETRIC_OFFENSIVE mode.
 
     Returns:
-        float: The computed penalty as a tensor.
+        float: The computed, mode-adjusted reward.
     """
     # Get player object from the environment
     player: Player = env.objects["player"]
 
-    mode = fight_mode_setter(env)
-    if mode == RewardMode.ASYMMETRIC_OFFENSIVE:
-        multiplier = -0.5 if player.body.position.x > 0 else 0.5
-        reward = multiplier * (player.body.position.x - player.prev_x)
-    else:
-        # Apply penalty if the player is in the danger zone
-        multiplier = -1 if player.body.position.x > 0 else 1
-        reward = multiplier * (player.body.position.x - player.prev_x)
+    # --- 1. Calculate the base reward ---
+    # Determine the direction to the middle (-1 if moving left, 1 if moving right)
+    direction_to_middle = -1 if player.body.position.x > 0 else 1
+    # Calculate the player's movement this frame
+    player_movement = player.body.position.x - player.prev_x
+    # Base reward is positive when movement is towards the center
+    base_reward = direction_to_middle * player_movement
 
-    return reward
+    # --- 2. Apply a multiplier if in offensive mode ---
+    mode = fight_mode_setter(env)
+
+    if mode == RewardMode.ASYMMETRIC_OFFENSIVE:
+        return base_reward * offensive_multiplier
+    else:
+        # For SYMMETRIC and DEFENSIVE modes, use the standard reward
+        return base_reward
 
 def head_to_opponent(
     env: WarehouseBrawl,
@@ -598,15 +636,15 @@ def holding_more_than_3_keys(
 
 def on_win_reward(env: WarehouseBrawl, agent: str) -> float:
     if agent == 'player':
-        return 1.0
+        return 10.0
     else:
-        return -1.0
+        return -5.0
 
 def on_knockout_reward(env: WarehouseBrawl, agent: str) -> float:
     if agent == 'player':
-        return -1.0
+        return -10.0
     else:
-        return 1.0
+        return 15.0
 
 def on_equip_reward(env: WarehouseBrawl, agent: str) -> float:
 
@@ -835,23 +873,23 @@ Add your dictionary of RewardFunctions here using RewTerms
 def gen_reward_manager():
     reward_functions = {
         'target_height_reward': RewTerm(func=base_height_l2, weight=0.05, params={'target_height': -4, 'obj_name': 'player'}),
-        'danger_zone_reward': RewTerm(func=danger_zone_reward, weight=0.5),
-        'damage_interaction_reward': RewTerm(func=damage_interaction_reward, weight=1.0),
-        'head_to_middle_reward': RewTerm(func=head_to_middle_reward, weight=0.01),
-        'head_to_opponent': RewTerm(func=head_to_opponent, weight=0.05),
-        'penalize_attack_reward': RewTerm(func=in_state_reward, weight=-0.04, params={'desired_state': AttackState}),
-        'holding_more_than_3_keys': RewTerm(func=holding_more_than_3_keys, weight=-0.01),
-        'taunt_reward': RewTerm(func=in_state_reward, weight=0.2, params={'desired_state': TauntState}),
-        'stock_advantage_reward': RewTerm(func=stock_advantage_reward, weight=1.0),
-        'edge_guard_reward': RewTerm(func=edge_guard_reward, weight=0.5),
+        # 'danger_zone_reward': RewTerm(func=danger_zone_reward, weight=0.5),
+        'damage_interaction_reward': RewTerm(func=damage_interaction_reward, weight=2),
+        'head_to_middle_reward': RewTerm(func=head_to_middle_reward, weight=0.3),
+        'head_to_opponent': RewTerm(func=head_to_opponent, weight=4.5),
+        # 'penalize_attack_reward': RewTerm(func=in_state_reward, weight=-0.005, params={'desired_state': AttackState}),
+        'holding_more_than_3_keys': RewTerm(func=holding_more_than_3_keys, weight=-1),
+        # 'taunt_reward': RewTerm(func=in_state_reward, weight=0.2, params={'desired_state': TauntState}),
+        # 'stock_advantage_reward': RewTerm(func=stock_advantage_reward, weight=0.5),
+        'edge_guard_reward': RewTerm(func=edge_guard_reward, weight=0.1),
     }
     signal_subscriptions = {
         'on_win_reward': ('win_signal', RewTerm(func=on_win_reward, weight=50)),
-        'on_knockout_reward': ('knockout_signal', RewTerm(func=on_knockout_reward, weight=8)),
-        'on_combo_reward': ('hit_during_stun', RewTerm(func=on_combo_reward, weight=5)),
-        'on_equip_reward': ('weapon_equip_signal', RewTerm(func=on_equip_reward, weight=10)),
-        'on_drop_reward': ('weapon_drop_signal', RewTerm(func=on_drop_reward, weight=15)),
-        'first_hit_reward': ('first_hit_signal', RewTerm(func=first_hit, weight=10, params={'agent': 'player'})),
+        'on_knockout_reward': ('knockout_signal', RewTerm(func=on_knockout_reward, weight=15)),
+        'on_combo_reward': ('hit_during_stun', RewTerm(func=on_combo_reward, weight=7)),
+        'on_equip_reward': ('weapon_equip_signal', RewTerm(func=on_equip_reward, weight=5)),
+        'on_drop_reward': ('weapon_drop_signal', RewTerm(func=on_drop_reward, weight=2)),
+        # 'first_hit_reward': ('first_hit_signal', RewTerm(func=first_hit, weight=2, params={'agent': 'player'})),
     }
     return RewardManager(reward_functions, signal_subscriptions)
 
@@ -863,7 +901,7 @@ The main function runs training. You can change configurations such as the Agent
 '''
 if __name__ == '__main__':
     # Create agent
-    my_agent = CustomAgent(sb3_class=PPO, extractor=MLPExtractor)
+    my_agent = Skynet_Final('checkpoints/experiment_7_SkyNet_Final/rl_model_1364707_steps.zip')
 
     # Start here if you want to train from scratch. e.g:
     #my_agent = RecurrentPPOAgent()
@@ -882,11 +920,11 @@ if __name__ == '__main__':
     # Set save settings here:
     save_handler = SaveHandler(
         agent=my_agent, # Agent to save
-        save_freq=100_000, # Save frequency
+        save_freq=50_000, # Save frequency
         max_saved=40, # Maximum number of saved models
         save_path='checkpoints', # Save path
-        run_name='experiment_1_DG',
-        mode=SaveHandlerMode.FORCE # Save mode, FORCE or RESUME
+        run_name='experiment_7_SkyNet_Final',
+        mode=SaveHandlerMode.RESUME # Save mode, FORCE or RESUME
     )
 
     # Set opponent settings here:
